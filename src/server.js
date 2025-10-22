@@ -7,6 +7,7 @@ const rateLimit = require('express-rate-limit');
 require('dotenv').config();
 
 const testimonialsRoutes = require('./routes/testimonials');
+const contactRoutes = require('./routes/contact');
 const { errorHandler, notFound } = require('./middleware/errorHandler');
 
 const app = express();
@@ -50,6 +51,7 @@ app.get('/health', (req, res) => {
 
 // API routes
 app.use('/api/testimonials', testimonialsRoutes);
+app.use('/api/contact', contactRoutes);
 
 // Error handling middleware
 app.use(notFound);
@@ -61,6 +63,7 @@ function startServer() {
     console.log(`🚀 GrowWise Backend Server running on port ${PORT}`);
     console.log(`📊 Health check: http://localhost:${PORT}/health`);
     console.log(`🔗 Testimonials API: http://localhost:${PORT}/api/testimonials`);
+    console.log(`📧 Contact API: http://localhost:${PORT}/api/contact`);
   });
 }
 

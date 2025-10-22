@@ -1,0 +1,26 @@
+version: '3.8'
+
+services:
+  growwise-backend:
+    build: .
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=production
+      - SMTP_HOST=smtp.gmail.com
+      - SMTP_PORT=587
+      - SMTP_SECURE=false
+      - SMTP_USER=your-email@gmail.com
+      - FROM_EMAIL=your-email@gmail.com
+      - FROM_NAME=GrowWise
+      - CONTACT_EMAILS=thegrowwise@gmail.com,connect@thegrowwise.com
+      - NOTIFICATION_CHANNELS=email
+    secrets:
+      - smtp_password
+    volumes:
+      - ./src:/app/src
+    restart: unless-stopped
+
+secrets:
+  smtp_password:
+    file: ./secrets/smtp_password.txt
