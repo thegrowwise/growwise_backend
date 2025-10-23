@@ -98,3 +98,4 @@ class SendGridStrategy extends EmailStrategy {
 }
 
 module.exports = SendGridStrategy;
+

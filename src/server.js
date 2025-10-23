@@ -8,6 +8,7 @@ require('dotenv').config();
 
 const testimonialsRoutes = require('./routes/testimonials');
 const contactRoutes = require('./routes/contact');
+const searchRoutes = require('./routes/search');
 const { errorHandler, notFound } = require('./middleware/errorHandler');
 
 const app = express();
@@ -18,7 +19,13 @@ app.use(helmet());
 
 // CORS configuration
 app.use(cors({
-  origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
+  origin: [
+    'http://localhost:3000',
+    'http://localhost:3001', 
+    'http://127.0.0.1:3000',
+    'http://127.0.0.1:3001',
+    process.env.CORS_ORIGIN
+  ].filter(Boolean),
   credentials: true
 }));
 
@@ -52,6 +59,7 @@ app.get('/health', (req, res) => {
 // API routes
 app.use('/api/testimonials', testimonialsRoutes);
 app.use('/api/contact', contactRoutes);
+app.use('/api/search', searchRoutes);
 
 // Error handling middleware
 app.use(notFound);
@@ -60,10 +68,11 @@ app.use(errorHandler);
 // Start server
 function startServer() {
   app.listen(PORT, () => {
-    console.log(`🚀 GrowWise Backend Server running on port ${PORT}`);
-    console.log(`📊 Health check: http://localhost:${PORT}/health`);
-    console.log(`🔗 Testimonials API: http://localhost:${PORT}/api/testimonials`);
-    console.log(`📧 Contact API: http://localhost:${PORT}/api/contact`);
+        console.log(`🚀 GrowWise Backend Server running on port ${PORT}`);
+        console.log(`📊 Health check: http://localhost:${PORT}/health`);
+        console.log(`🔗 Testimonials API: http://localhost:${PORT}/api/testimonials`);
+        console.log(`📧 Contact API: http://localhost:${PORT}/api/contact`);
+        console.log(`🔍 Search API: http://localhost:${PORT}/api/search`);
   });
 }
 

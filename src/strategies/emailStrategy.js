@@ -17,3 +17,4 @@ class EmailStrategy {
 }
 
 module.exports = EmailStrategy;
+
