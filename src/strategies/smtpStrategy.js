@@ -41,6 +41,13 @@ class SmtpStrategy extends EmailStrategy {
   }
 
   /**
+   * Get strategy name
+   */
+  getStrategyName() {
+    return 'SMTP';
+  }
+
+  /**
    * Send email via SMTP
    */
   async sendEmail(emailConfig) {

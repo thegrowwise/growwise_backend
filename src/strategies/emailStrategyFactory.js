@@ -66,6 +66,18 @@ class EmailStrategyFactory {
       throw new Error('No email strategies configured');
     }
 
+    // Check if a specific strategy is requested via environment variable
+    const preferredStrategy = process.env.EMAIL_SERVICE;
+    if (preferredStrategy) {
+      const strategy = this.getStrategyByName(preferredStrategy);
+      if (strategy && strategy.isConfigured()) {
+        console.log(`📧 Using preferred email strategy: ${strategy.getStrategyName()}`);
+        return strategy;
+      } else {
+        console.warn(`⚠️ Preferred email strategy '${preferredStrategy}' not available or not configured, falling back to best available strategy`);
+      }
+    }
+
     // Return the first available strategy (priority order)
     return this.strategies[0];
   }
@@ -129,10 +141,25 @@ class EmailStrategyFactory {
   }
 
   /**
+   * Get the currently active strategy
+   */
+  getActiveStrategy() {
+    try {
+      return this.getBestStrategy();
+    } catch (error) {
+      return null;
+    }
+  }
+
+  /**
    * Get configuration status
    */
   getConfigurationStatus() {
+    const activeStrategy = this.getActiveStrategy();
+    
     return {
+      preferredStrategy: process.env.EMAIL_SERVICE || 'auto',
+      activeStrategy: activeStrategy ? activeStrategy.getStrategyName() : 'none',
       sendgrid: {
         configured: this.isSendGridConfigured(),
         hasApiKey: !!process.env.SENDGRID_API_KEY,

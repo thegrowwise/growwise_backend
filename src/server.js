@@ -9,6 +9,7 @@ require('dotenv').config();
 const testimonialsRoutes = require('./routes/testimonials');
 const contactRoutes = require('./routes/contact');
 const searchRoutes = require('./routes/search');
+const enrollmentRoutes = require('./routes/enrollment');
 const { errorHandler, notFound } = require('./middleware/errorHandler');
 
 const app = express();
@@ -60,6 +61,7 @@ app.get('/health', (req, res) => {
 app.use('/api/testimonials', testimonialsRoutes);
 app.use('/api/contact', contactRoutes);
 app.use('/api/search', searchRoutes);
+app.use('/api/enrollment', enrollmentRoutes);
 
 // Error handling middleware
 app.use(notFound);
@@ -73,6 +75,7 @@ function startServer() {
         console.log(`🔗 Testimonials API: http://localhost:${PORT}/api/testimonials`);
         console.log(`📧 Contact API: http://localhost:${PORT}/api/contact`);
         console.log(`🔍 Search API: http://localhost:${PORT}/api/search`);
+        console.log(`🎓 Enrollment API: http://localhost:${PORT}/api/enrollment`);
   });
 }
 

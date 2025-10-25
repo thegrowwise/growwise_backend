@@ -14,6 +14,10 @@ class EmailStrategy {
   isConfigured() {
     throw new Error('isConfigured method must be implemented');
   }
+
+  getStrategyName() {
+    throw new Error('getStrategyName method must be implemented');
+  }
 }
 
 module.exports = EmailStrategy;
