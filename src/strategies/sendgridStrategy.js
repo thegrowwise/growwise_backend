@@ -35,6 +35,13 @@ class SendGridStrategy extends EmailStrategy {
   }
 
   /**
+   * Get strategy name
+   */
+  getStrategyName() {
+    return 'SendGrid';
+  }
+
+  /**
    * Send email via SendGrid
    */
   async sendEmail(emailConfig) {
