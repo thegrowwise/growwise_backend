@@ -12,7 +12,7 @@ yarn-error.log*
 .env.production.local
 
 # Logs
-logs
+logs/
 *.log
 
 # Runtime data
@@ -79,6 +79,9 @@ public
 # Temporary folders
 tmp/
 temp/
+
+# Data directory (removed - using database only)
+# data/
 
 # Editor directories and files
 .vscode/

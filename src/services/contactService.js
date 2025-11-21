@@ -1,5 +1,7 @@
 const Joi = require('joi');
 const notificationService = require('./notificationService');
+const { getDatabase } = require('../database/database');
+const logger = require('../utils/logger');
 
 /**
  * Contact Form Service
@@ -8,6 +10,7 @@ const notificationService = require('./notificationService');
 class ContactService {
   constructor() {
     this.submissionSchema = this.createValidationSchema();
+    this.db = getDatabase();
   }
 
   /**
@@ -98,6 +101,16 @@ class ContactService {
   }
 
   /**
+   * Generate unique submission ID
+   * @returns {string} Submission ID
+   */
+  generateSubmissionId() {
+    const timestamp = Date.now();
+    const random = Math.random().toString(36).substring(2, 8);
+    return `CF-${timestamp}-${random}`.toUpperCase();
+  }
+
+  /**
    * Process contact form submission
    * @param {Object} formData - Form submission data
    * @param {Object} requestInfo - Request metadata (IP, user agent, etc.)
@@ -126,11 +139,24 @@ class ContactService {
         submittedAt: new Date().toISOString()
       };
 
-      console.log('📝 Processing contact form submission:', {
-        name: submissionData.name,
-        email: submissionData.email,
-        subject: submissionData.subject
-      });
+      logger.info({ 
+        name: submissionData.name, 
+        email: submissionData.email, 
+        subject: submissionData.subject 
+      }, 'Processing contact form submission');
+
+      // Generate submission ID
+      const submissionId = this.generateSubmissionId();
+
+      // Store in database
+      try {
+        await this.db.createContact({
+          id: submissionId,
+          ...submissionData
+        });
+      } catch (storageError) {
+        logger.error({ error: storageError.message }, 'Failed to save contact, continuing with notifications');
+      }
 
       // Send notifications through all enabled channels
       const notificationResults = await notificationService.sendNotification(
@@ -144,13 +170,10 @@ class ContactService {
         'confirmation'
       );
 
-      // Log submission for tracking
-      this.logSubmission(submissionData, notificationResults);
-
       return {
         success: true,
         message: 'Contact form submitted successfully',
-        submissionId: this.generateSubmissionId(),
+        submissionId: submissionId,
         notifications: {
           lead: notificationResults,
           confirmation: confirmationResult
@@ -158,7 +181,7 @@ class ContactService {
       };
 
     } catch (error) {
-      console.error('❌ Error processing contact form submission:', error);
+      logger.error({ error: error.message, stack: error.stack }, 'Error processing contact form submission');
       return {
         success: false,
         message: 'Failed to process submission',
@@ -168,50 +191,21 @@ class ContactService {
   }
 
   /**
-   * Generate unique submission ID
-   * @returns {string} Submission ID
-   */
-  generateSubmissionId() {
-    const timestamp = Date.now();
-    const random = Math.random().toString(36).substring(2, 8);
-    return `CF-${timestamp}-${random}`.toUpperCase();
-  }
-
-  /**
-   * Log submission for tracking and analytics
-   * @param {Object} data - Submission data
-   * @param {Object} notificationResults - Notification results
-   */
-  logSubmission(data, notificationResults) {
-    const logEntry = {
-      timestamp: new Date().toISOString(),
-      submissionId: this.generateSubmissionId(),
-      name: data.name,
-      email: data.email,
-      subject: data.subject,
-      ip: data.ip,
-      userAgent: data.userAgent,
-      notifications: notificationResults
-    };
-
-    console.log('📊 Contact form submission logged:', logEntry);
-    
-    // TODO: Store in database for analytics
-    // This could be stored in MongoDB, PostgreSQL, or a logging service
-  }
-
-  /**
    * Get contact form statistics
-   * @returns {Object} Statistics
+   * @returns {Promise<Object>} Statistics
    */
-  getStats() {
-    // TODO: Implement statistics from database
-    return {
-      totalSubmissions: 0,
-      todaySubmissions: 0,
-      thisWeekSubmissions: 0,
-      thisMonthSubmissions: 0
-    };
+  async getStats() {
+    try {
+      return await this.db.getContactStats();
+    } catch (error) {
+      logger.error({ error: error.message }, 'Error getting contact statistics');
+      return {
+        totalSubmissions: 0,
+        todaySubmissions: 0,
+        thisWeekSubmissions: 0,
+        thisMonthSubmissions: 0
+      };
+    }
   }
 
   /**

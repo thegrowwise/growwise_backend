@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const EnrollmentService = require('../services/enrollmentService');
+const logger = require('../utils/logger');
 
 const enrollmentService = new EnrollmentService();
 
@@ -79,12 +80,13 @@ router.post('/', async (req, res) => {
     const businessSent = notificationResult.businessEmail && notificationResult.businessEmail.success;
     const userSent = notificationResult.userEmail && notificationResult.userEmail.success;
     
-    console.log('✅ Enrollment processed successfully:', {
-      student: enrollmentData.fullName,
-      email: enrollmentData.email,
-      businessEmailSent: businessSent,
-      userEmailSent: userSent
-    });
+    logger.info({ 
+      student: enrollmentData.fullName, 
+      email: enrollmentData.email, 
+      businessEmailSent: businessSent, 
+      userEmailSent: userSent,
+      enrollmentId: notificationResult.enrollmentId
+    }, 'Enrollment processed successfully');
 
     // Always return success to the user
     res.json({
@@ -93,7 +95,7 @@ router.post('/', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('❌ Enrollment API Error:', error);
+    logger.error({ error: error.message, stack: error.stack }, 'Enrollment API Error');
     res.status(500).json({
       success: false,
       error: error.message || 'An unknown error occurred',
