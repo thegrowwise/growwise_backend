@@ -1,7 +1,7 @@
 const EmailStrategyFactory = require('../strategies/emailStrategyFactory');
 const { getEmailTemplate } = require('../config/emailTemplates');
-const fs = require('fs').promises;
-const path = require('path');
+const { getDatabase } = require('../database/database');
+const logger = require('../utils/logger');
 
 /**
  * Enrollment Service for handling course enrollment notifications
@@ -10,6 +10,16 @@ const path = require('path');
 class EnrollmentService {
   constructor() {
     this.emailStrategyFactory = new EmailStrategyFactory();
+    this.db = getDatabase();
+  }
+
+  /**
+   * Generate unique enrollment ID
+   */
+  generateEnrollmentId() {
+    const timestamp = Date.now();
+    const random = Math.random().toString(36).substring(2, 8);
+    return `ENR-${timestamp}-${random}`.toUpperCase();
   }
 
   /**
@@ -18,7 +28,20 @@ class EnrollmentService {
    */
   async sendEnrollmentNotifications(enrollmentData) {
     try {
-      console.log('📧 Sending enrollment notifications for:', enrollmentData.fullName);
+      logger.info({ fullName: enrollmentData.fullName, email: enrollmentData.email }, 'Sending enrollment notifications');
+      
+      // Generate enrollment ID
+      const enrollmentId = this.generateEnrollmentId();
+      
+      // Store enrollment in database first
+      try {
+        await this.db.createEnrollment({
+          id: enrollmentId,
+          ...enrollmentData
+        });
+      } catch (storageError) {
+        logger.error({ error: storageError.message }, 'Failed to save enrollment, continuing with notifications');
+      }
       
       let businessResult = null;
       let userResult = null;
@@ -27,12 +50,14 @@ class EnrollmentService {
       try {
         businessResult = await this.sendBusinessNotification(enrollmentData);
         if (businessResult.success) {
-          console.log('✅ Business notification sent successfully');
+          logger.info({ enrollmentId }, 'Business notification sent successfully');
+          // Update enrollment with email status
+          await this.db.updateEnrollmentEmailStatus(enrollmentId, 'business', true, businessResult.emailId);
         } else {
-          console.warn('⚠️ Business notification failed:', businessResult.error);
+          logger.warn({ error: businessResult.error, enrollmentId }, 'Business notification failed');
         }
       } catch (error) {
-        console.error('❌ Business notification error:', error.message);
+        logger.error({ error: error.message, enrollmentId }, 'Business notification error');
         businessResult = { success: false, error: error.message };
       }
       
@@ -40,12 +65,14 @@ class EnrollmentService {
       try {
         userResult = await this.sendUserConfirmation(enrollmentData);
         if (userResult.success) {
-          console.log('✅ User confirmation sent successfully');
+          logger.info({ enrollmentId }, 'User confirmation sent successfully');
+          // Update enrollment with email status
+          await this.db.updateEnrollmentEmailStatus(enrollmentId, 'user', true, userResult.emailId);
         } else {
-          console.warn('⚠️ User confirmation failed:', userResult.error);
+          logger.warn({ error: userResult.error, enrollmentId }, 'User confirmation failed');
         }
       } catch (error) {
-        console.error('❌ User confirmation error:', error.message);
+        logger.error({ error: error.message, enrollmentId }, 'User confirmation error');
         userResult = { success: false, error: error.message };
       }
 
@@ -53,20 +80,21 @@ class EnrollmentService {
       const businessSent = businessResult && businessResult.success;
       const userSent = userResult && userResult.success;
       
-      // If both emails failed, store enrollment data for manual processing
+      // If both emails failed, log for manual processing
       if (!businessSent && !userSent) {
-        await this.storeEnrollmentForManualProcessing(enrollmentData);
+        logger.warn({ email: enrollmentData.email, enrollmentId }, 'Both emails failed, enrollment requires manual processing');
       }
       
       return {
         success: true, // Always return success for enrollment
+        enrollmentId: enrollmentId,
         businessEmail: businessResult,
         userEmail: userResult,
         message: 'Enrollment processed successfully'
       };
 
     } catch (error) {
-      console.error('❌ Enrollment notification error:', error);
+      logger.error({ error: error.message, stack: error.stack }, 'Enrollment notification error');
       // Even if there's an error, return success for enrollment
       return {
         success: true,
@@ -113,7 +141,7 @@ class EnrollmentService {
 
       const result = await emailStrategy.sendEmail(emailData);
       
-      console.log('✅ Business enrollment notification sent:', result);
+      logger.info({ result }, 'Business enrollment notification sent');
       return {
         success: true,
         emailId: result.messageId || `business_${Date.now()}`,
@@ -122,7 +150,7 @@ class EnrollmentService {
       };
 
     } catch (error) {
-      console.error('❌ Business notification error:', error);
+      logger.error({ error: error.message }, 'Business notification error');
       return { 
         success: false, 
         error: error.message,
@@ -161,7 +189,7 @@ class EnrollmentService {
 
       const result = await emailStrategy.sendEmail(emailData);
       
-      console.log('✅ User confirmation email sent:', result);
+      logger.info({ result }, 'User confirmation email sent');
       return {
         success: true,
         emailId: result.messageId || `user_${Date.now()}`,
@@ -170,7 +198,7 @@ class EnrollmentService {
       };
 
     } catch (error) {
-      console.error('❌ User confirmation error:', error);
+      logger.error({ error: error.message }, 'User confirmation error');
       return { 
         success: false, 
         error: error.message,
@@ -178,35 +206,6 @@ class EnrollmentService {
       };
     }
   }
-
-  /**
-   * Store enrollment data for manual processing when emails fail
-   * @param {Object} enrollmentData - Enrollment form data
-   */
-  async storeEnrollmentForManualProcessing(enrollmentData) {
-    try {
-      const dataDir = path.join(__dirname, '../../data');
-      const fileName = `enrollment_${Date.now()}_${enrollmentData.fullName.replace(/\s+/g, '_')}.json`;
-      const filePath = path.join(dataDir, fileName);
-      
-      // Ensure data directory exists
-      await fs.mkdir(dataDir, { recursive: true });
-      
-      // Store enrollment data with timestamp
-      const storedData = {
-        ...enrollmentData,
-        storedAt: new Date().toISOString(),
-        reason: 'Email delivery failed - manual processing required'
-      };
-      
-      await fs.writeFile(filePath, JSON.stringify(storedData, null, 2));
-      console.log(`📁 Enrollment data stored for manual processing: ${fileName}`);
-      
-    } catch (error) {
-      console.error('❌ Failed to store enrollment data:', error.message);
-    }
-  }
-
 }
 
 module.exports = EnrollmentService;

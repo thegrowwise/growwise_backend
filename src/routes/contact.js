@@ -47,7 +47,7 @@ router.post('/', async (req, res, next) => {
  */
 router.get('/stats', async (req, res, next) => {
   try {
-    const stats = contactService.getStats();
+    const stats = await contactService.getStats();
     res.json({
       success: true,
       data: stats
