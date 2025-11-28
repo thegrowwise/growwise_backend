@@ -1,0 +1,54 @@
+service: growwise-backend
+
+frameworkVersion: '4'
+
+provider:
+  name: aws
+  runtime: nodejs20.x
+  region: us-west-1  # Changed to match AWS CLI configuration
+  stage: ${opt:stage, 'dev'}
+  environment:
+    NODE_ENV: production
+    STRIPE_SECRET_KEY: ${env:STRIPE_SECRET_KEY}
+    STRIPE_WEBHOOK_SECRET: ${env:STRIPE_WEBHOOK_SECRET}
+    SUPABASE_URL: ${env:SUPABASE_URL}
+    SUPABASE_ANON_KEY: ${env:SUPABASE_ANON_KEY}
+    FRONTEND_URL: ${env:FRONTEND_URL}
+    CORS_ORIGIN: ${env:CORS_ORIGIN}
+    LOG_LEVEL: ${env:LOG_LEVEL, 'info'}
+  httpApi:
+    cors: true
+  timeout: 30
+  memorySize: 512
+
+functions:
+  api:
+    handler: src/serverless.handler
+    events:
+      - httpApi:
+          path: /{proxy+}
+          method: ANY
+      - httpApi:
+          path: /
+          method: ANY
+
+plugins:
+  - serverless-offline
+
+package:
+  patterns:
+    - '!logs/**'
+    - '!*.md'
+    - '!env.example'
+    - '!nodemon.json'
+    - '!docker-compose.yml'
+    - '!supabase_*.sql'
+    - '!.git/**'
+    - '!.serverless/**'
+    - '!test/**'
+    - '!tests/**'
+    - '!*.test.js'
+    - '!*.spec.js'
+  individually: false
+  excludeDevDependencies: true
+

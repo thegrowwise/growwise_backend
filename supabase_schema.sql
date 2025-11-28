@@ -43,6 +43,11 @@ BEGIN
     ALTER TABLE orders ADD COLUMN tax_id TEXT;
   END IF;
   
+  -- Processing fee
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='orders' AND column_name='processing_fee') THEN
+    ALTER TABLE orders ADD COLUMN processing_fee DECIMAL(10, 2) DEFAULT 0;
+  END IF;
+  
   -- Remove old JSONB columns if they exist (optional - comment out if you want to keep them)
   -- ALTER TABLE orders DROP COLUMN IF EXISTS customer_details;
   -- ALTER TABLE orders DROP COLUMN IF EXISTS shipping_details;
@@ -72,6 +77,9 @@ CREATE TABLE IF NOT EXISTS orders (
   tax_amount DECIMAL(10, 2) DEFAULT 0,
   tax_rate DECIMAL(5, 4),
   tax_id TEXT,
+  
+  -- Processing fee (3.5% of subtotal, calculated server-side)
+  processing_fee DECIMAL(10, 2) DEFAULT 0,
   
   -- Optional: Metadata for extra/unstructured data
   metadata JSONB,

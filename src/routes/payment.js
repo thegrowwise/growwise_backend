@@ -52,12 +52,22 @@ router.post('/create-checkout-session', (req, res, next) => {
       }
     }
 
-    // Calculate total amount
-    const totalAmount = items.reduce((sum, item) => sum + (item.price * item.quantity * 100), 0); // Convert to cents
+    // Calculate subtotal (items only, in cents)
+    const subtotalAmount = items.reduce((sum, item) => sum + (item.price * item.quantity * 100), 0);
 
-    if (totalAmount <= 0) {
+    if (subtotalAmount <= 0) {
       return res.status(400).json({ error: 'Total amount must be greater than 0' });
     }
+
+    // Calculate processing fee: 3.5% of subtotal (server-side calculation - cannot be manipulated)
+    const PROCESSING_FEE_RATE = 0.035; // 3.5%
+    const processingFeeAmount = Math.round(subtotalAmount * PROCESSING_FEE_RATE); // Round to nearest cent
+    
+    logger.info({
+      subtotalAmount: subtotalAmount / 100,
+      processingFeeAmount: processingFeeAmount / 100,
+      processingFeeRate: PROCESSING_FEE_RATE
+    }, 'Processing fee calculated');
 
     // Check if there's already a pending order with the same items (prevent duplicate orders)
     // This is a simple check - in production, you might want more sophisticated duplicate detection
@@ -101,8 +111,9 @@ router.post('/create-checkout-session', (req, res, next) => {
         customerEmail: customerEmail,
         customerName: customerName,
         locale: locale,
-        totalAmount: totalAmount / 100, // Convert back to dollars
+        totalAmount: subtotalAmount / 100, // Subtotal in dollars (before processing fee and tax)
         status: 'pending',
+        processingFee: processingFeeAmount / 100, // Processing fee in dollars
       });
       logger.info({ orderId: order.id }, 'Order created successfully');
     } catch (error) {
@@ -127,6 +138,25 @@ router.post('/create-checkout-session', (req, res, next) => {
       quantity: item.quantity,
     }));
 
+    // Add processing fee as a separate line item (server-side calculated - cannot be manipulated)
+    lineItems.push({
+      price_data: {
+        currency: 'usd',
+        product_data: {
+          name: 'Processing Fee',
+          description: 'Payment processing fee (3.5%)',
+        },
+        unit_amount: processingFeeAmount, // Already in cents
+      },
+      quantity: 1,
+    });
+
+    logger.debug({
+      itemCount: items.length,
+      processingFee: processingFeeAmount / 100,
+      lineItemsCount: lineItems.length
+    }, 'Line items prepared with processing fee');
+
     // Determine success and cancel URLs based on locale
     // Default to port 3000, but can be overridden via FRONTEND_URL env var
     const baseUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
@@ -146,7 +176,8 @@ router.post('/create-checkout-session', (req, res, next) => {
       orderId: order.id, // Store order ID for webhook lookup
       locale: locale || 'en',
       itemCount: items.length.toString(),
-      totalAmount: (items.reduce((sum, item) => sum + (item.price * item.quantity), 0)).toString(),
+      subtotalAmount: (subtotalAmount / 100).toString(),
+      processingFee: (processingFeeAmount / 100).toString(),
     };
     
     // Add customer name if provided (truncate to 200 chars to leave room)
