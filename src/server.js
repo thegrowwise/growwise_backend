@@ -99,7 +99,10 @@ app.post('/api/payment/webhook', express.raw({ type: 'application/json' }), asyn
   
   switch (event.type) {
     case 'checkout.session.completed':
-      const session = event.data.object;
+      // Retrieve session with expanded line items to get processing fee
+      const session = await stripe.checkout.sessions.retrieve(event.data.object.id, {
+        expand: ['line_items']
+      });
       logger.info({ 
         sessionId: session.id, 
         customerEmail: session.customer_email,
@@ -149,6 +152,31 @@ app.post('/api/payment/webhook', express.raw({ type: 'application/json' }), asyn
           // Extract tax information
           const totalDetails = session.total_details;
           const taxAmount = totalDetails?.amount_tax ? totalDetails.amount_tax / 100 : 0;
+          const taxBreakdown = totalDetails?.breakdown;
+          
+          // Extract processing fee from line items (look for "Processing Fee" item)
+          let processingFee = 0;
+          if (session.line_items?.data) {
+            const processingFeeItem = session.line_items.data.find(
+              item => item.description?.toLowerCase().includes('processing fee') || 
+                      item.description?.toLowerCase().includes('payment processing')
+            );
+            if (processingFeeItem) {
+              processingFee = processingFeeItem.amount_total / 100; // Convert from cents
+            }
+          }
+          
+          // Log tax and fee information for debugging
+          logger.info({
+            taxAmount,
+            processingFee,
+            taxBreakdown,
+            totalDetails,
+            automaticTaxEnabled: session.automatic_tax?.enabled,
+            shippingAddress: session.shipping_details?.address,
+            amountSubtotal: totalDetails?.amount_subtotal ? totalDetails.amount_subtotal / 100 : 0,
+            amountTotal: session.amount_total / 100
+          }, 'Tax and processing fee information from Stripe session');
           
           const updatedOrder = await orderService.updateOrderStatus(orderId, 'paid', {
             stripeSessionId: session.id,
@@ -174,6 +202,9 @@ app.post('/api/payment/webhook', express.raw({ type: 'application/json' }), asyn
             // Tax information
             taxAmount: taxAmount,
             taxRate: session.automatic_tax?.enabled ? null : null, // Can be calculated if needed
+            
+            // Processing fee
+            processingFee: processingFee,
           });
           logger.info({ orderId, updatedOrder }, 'Order marked as paid in database');
         } else {

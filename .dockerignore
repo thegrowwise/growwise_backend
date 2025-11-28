@@ -1,0 +1,17 @@
+node_modules
+npm-debug.log
+logs
+*.md
+.env
+.env.local
+.git
+.gitignore
+.DS_Store
+coverage
+.nyc_output
+*.log
+nodemon.json
+docker-compose.yml
+supabase_*.sql
+
+

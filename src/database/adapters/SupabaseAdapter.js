@@ -59,6 +59,7 @@ class SupabaseAdapter extends BaseAdapter {
           customer_name: orderData.customerName,
           locale: orderData.locale || 'en',
           total_amount: orderData.totalAmount,
+          processing_fee: orderData.processingFee || 0,
           created_at: orderData.createdAt || new Date().toISOString(),
           updated_at: orderData.updatedAt || new Date().toISOString(),
         }
@@ -132,6 +133,7 @@ class SupabaseAdapter extends BaseAdapter {
     if (additionalData.taxAmount !== undefined) updateData.tax_amount = additionalData.taxAmount;
     if (additionalData.taxRate !== undefined) updateData.tax_rate = additionalData.taxRate;
     if (additionalData.taxId) updateData.tax_id = additionalData.taxId;
+    if (additionalData.processingFee !== undefined) updateData.processing_fee = additionalData.processingFee;
     if (additionalData.metadata) updateData.metadata = additionalData.metadata;
 
     const { data, error } = await this.client
@@ -448,6 +450,7 @@ class SupabaseAdapter extends BaseAdapter {
       taxAmount: supabaseOrder.tax_amount ? parseFloat(supabaseOrder.tax_amount) : null,
       taxRate: supabaseOrder.tax_rate ? parseFloat(supabaseOrder.tax_rate) : null,
       taxId: supabaseOrder.tax_id,
+      processingFee: supabaseOrder.processing_fee ? parseFloat(supabaseOrder.processing_fee) : null,
       metadata: supabaseOrder.metadata,
       createdAt: supabaseOrder.created_at,
       updatedAt: supabaseOrder.updated_at,
