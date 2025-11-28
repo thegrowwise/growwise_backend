@@ -171,6 +171,9 @@ router.post('/create-checkout-session', checkStripeConfig, async (req, res) => {
         shipping_address_collection: {
           allowed_countries: ['US', 'CA', 'GB', 'AU', 'IN'], // Add more countries as needed
         },
+        automatic_tax: {
+          enabled: true,
+        },
         allow_promotion_codes: true,
         // Ensure redirect happens after payment
         payment_intent_data: {

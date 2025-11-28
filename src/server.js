@@ -22,6 +22,9 @@ const orderService = require('./services/orderService');
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+// Detect if we're in a serverless environment (Vercel, AWS Lambda, etc.)
+const isServerless = process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.FUNCTION_TARGET;
+
 // Security middleware
 app.use(helmet());
 
@@ -240,6 +243,29 @@ app.use(compression());
 // Logging middleware
 app.use(morgan('combined'));
 
+// Initialize database on first request (for serverless) - must be before routes
+if (isServerless) {
+  let dbInitialized = false;
+  async function ensureDatabaseInitialized() {
+    if (!dbInitialized) {
+      try {
+        await initializeDatabase();
+        logger.info('Database connection initialized');
+        dbInitialized = true;
+      } catch (error) {
+        logger.error({ error: error.message }, 'Failed to initialize database connection');
+        // Continue anyway - some adapters might not need explicit connection
+        dbInitialized = true; // Mark as attempted to prevent infinite retries
+      }
+    }
+  }
+  
+  app.use(async (req, res, next) => {
+    await ensureDatabaseInitialized();
+    next();
+  });
+}
+
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.status(200).json({
@@ -277,53 +303,58 @@ process.on('uncaughtException', (error) => {
   // Don't exit for other errors, just log
 });
 
-// Start server
-async function startServer() {
-  // Initialize database connection
-  try {
-    await initializeDatabase();
-    logger.info('Database connection initialized');
-  } catch (error) {
-    logger.error({ error: error.message }, 'Failed to initialize database connection');
-    // Continue anyway - some adapters might not need explicit connection
+// Start server (only if not in serverless environment)
+if (!isServerless) {
+  async function startServer() {
+    // Initialize database connection
+    try {
+      await initializeDatabase();
+      logger.info('Database connection initialized');
+    } catch (error) {
+      logger.error({ error: error.message }, 'Failed to initialize database connection');
+      // Continue anyway - some adapters might not need explicit connection
+    }
+
+    const server = app.listen(PORT, () => {
+          logger.info(`GrowWise Backend Server running on port ${PORT}`);
+          logger.info(`Health check: http://localhost:${PORT}/health`);
+          logger.info(`Testimonials API: http://localhost:${PORT}/api/testimonials`);
+          logger.info(`Contact API: http://localhost:${PORT}/api/contact`);
+          logger.info(`Search API: http://localhost:${PORT}/api/search`);
+          logger.info(`Enrollment API: http://localhost:${PORT}/api/enrollment`);
+          logger.info(`Payment API: http://localhost:${PORT}/api/payment`);
+    });
+
+    server.on('error', (error) => {
+      if (error.code === 'EADDRINUSE') {
+        logger.error(`Port ${PORT} is already in use.`);
+        logger.error('Please kill the existing process:');
+        logger.error(`lsof -ti:${PORT} | xargs kill -9`);
+        process.exit(1);
+      } else {
+        logger.error({ error: error.message }, 'Server error');
+        throw error;
+      }
+    });
   }
 
-  const server = app.listen(PORT, () => {
-        logger.info(`GrowWise Backend Server running on port ${PORT}`);
-        logger.info(`Health check: http://localhost:${PORT}/health`);
-        logger.info(`Testimonials API: http://localhost:${PORT}/api/testimonials`);
-        logger.info(`Contact API: http://localhost:${PORT}/api/contact`);
-        logger.info(`Search API: http://localhost:${PORT}/api/search`);
-        logger.info(`Enrollment API: http://localhost:${PORT}/api/enrollment`);
-        logger.info(`Payment API: http://localhost:${PORT}/api/payment`);
+  // Graceful shutdown
+  const { closeDatabase } = require('./database/database');
+
+  process.on('SIGTERM', async () => {
+    logger.info('SIGTERM received, shutting down gracefully');
+    await closeDatabase();
+    process.exit(0);
   });
 
-  server.on('error', (error) => {
-    if (error.code === 'EADDRINUSE') {
-      logger.error(`Port ${PORT} is already in use.`);
-      logger.error('Please kill the existing process:');
-      logger.error(`lsof -ti:${PORT} | xargs kill -9`);
-      process.exit(1);
-    } else {
-      logger.error({ error: error.message }, 'Server error');
-      throw error;
-    }
+  process.on('SIGINT', async () => {
+    logger.info('SIGINT received, shutting down gracefully');
+    await closeDatabase();
+    process.exit(0);
   });
+
+  startServer();
 }
 
-// Graceful shutdown
-const { closeDatabase } = require('./database/database');
-
-process.on('SIGTERM', async () => {
-  logger.info('SIGTERM received, shutting down gracefully');
-  await closeDatabase();
-  process.exit(0);
-});
-
-process.on('SIGINT', async () => {
-  logger.info('SIGINT received, shutting down gracefully');
-  await closeDatabase();
-  process.exit(0);
-});
-
-startServer();
+// Export app for Vercel serverless functions
+module.exports = app;
