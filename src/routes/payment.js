@@ -16,7 +16,17 @@ const checkStripeConfig = (req, res, next) => {
 };
 
 // Create checkout session
-router.post('/create-checkout-session', checkStripeConfig, async (req, res) => {
+// Add logging middleware first to debug 405 errors
+router.post('/create-checkout-session', (req, res, next) => {
+  logger.info({ 
+    method: req.method, 
+    path: req.path, 
+    originalUrl: req.originalUrl,
+    hasStripe: !!stripe,
+    stripeKeySet: !!process.env.STRIPE_SECRET_KEY
+  }, 'POST /create-checkout-session - middleware called');
+  next();
+}, checkStripeConfig, async (req, res) => {
   try {
     logger.info({ 
       method: req.method, 
