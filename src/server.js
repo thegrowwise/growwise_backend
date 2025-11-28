@@ -25,6 +25,11 @@ const PORT = process.env.PORT || 3001;
 // Detect if we're in a serverless environment (Vercel, AWS Lambda, etc.)
 const isServerless = process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.FUNCTION_TARGET;
 
+// Trust proxy - REQUIRED for Vercel and other reverse proxies
+// This allows Express to correctly identify client IPs and handle X-Forwarded-* headers
+// Without this, rate limiting and other IP-based features won't work correctly
+app.set('trust proxy', true);
+
 // Security middleware
 app.use(helmet());
 
@@ -314,7 +319,23 @@ app.use('/api/enrollment', enrollmentRoutes);
 // Payment routes - mount after webhook route to avoid conflicts
 // The webhook route is already registered directly on app at /api/payment/webhook
 // Mount payment router - this will handle /api/payment/* routes except /webhook
+// IMPORTANT: Make sure this is after body parsing middleware so req.body is available
 app.use('/api/payment', paymentRoutes);
+
+// Debug: Log route registration in development
+if (process.env.NODE_ENV !== 'production' && !isServerless) {
+  setTimeout(() => {
+    logger.info('Registered routes:');
+    app._router.stack.forEach((middleware, i) => {
+      if (middleware.route) {
+        const methods = Object.keys(middleware.route.methods).join(', ').toUpperCase();
+        logger.info(`  ${methods} ${middleware.route.path}`);
+      } else if (middleware.name === 'router') {
+        logger.info(`  Router mounted at: ${middleware.regexp}`);
+      }
+    });
+  }, 100);
+}
 
 // Error handling middleware
 app.use(notFound);
