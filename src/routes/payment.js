@@ -18,7 +18,14 @@ const checkStripeConfig = (req, res, next) => {
 // Create checkout session
 router.post('/create-checkout-session', checkStripeConfig, async (req, res) => {
   try {
-    logger.info({ method: req.method, path: req.path, url: req.url }, 'Creating checkout session');
+    logger.info({ 
+      method: req.method, 
+      path: req.path, 
+      url: req.url,
+      originalUrl: req.originalUrl,
+      route: req.route?.path,
+      baseUrl: req.baseUrl
+    }, 'Creating checkout session - route handler called');
     logger.debug({ body: req.body }, 'Checkout session request body');
     const { items, customerEmail, customerName, locale = 'en' } = req.body;
     logger.debug({ itemsCount: items?.length, locale, hasEmail: !!customerEmail }, 'Parsed checkout data');
@@ -311,6 +318,11 @@ router.get('/orders/email/:email', async (req, res) => {
 // Test endpoint to verify router is working
 router.get('/test', (req, res) => {
   res.json({ success: true, message: 'Payment router is working' });
+});
+
+// Test POST endpoint to verify POST method works
+router.post('/test', (req, res) => {
+  res.json({ success: true, message: 'Payment router POST is working', body: req.body });
 });
 
 // Note: Webhook endpoint is handled in server.js before body parsing middleware
