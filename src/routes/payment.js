@@ -15,7 +15,10 @@ const checkStripeConfig = (req, res, next) => {
   next();
 };
 
-// Create checkout session
+// Create checkout session route is now registered directly on app in server.js
+// This avoids router mounting issues in Vercel serverless environment
+// Route handler commented out to avoid conflicts:
+/*
 router.post('/create-checkout-session', checkStripeConfig, async (req, res) => {
   try {
     logger.info({ method: req.method, path: req.path, url: req.url }, 'Creating checkout session');
@@ -239,6 +242,7 @@ router.post('/create-checkout-session', checkStripeConfig, async (req, res) => {
     }
   }
 });
+*/ // End of commented out create-checkout-session route
 
 // Retrieve checkout session (for success page)
 router.get('/session/:sessionId', checkStripeConfig, async (req, res) => {
