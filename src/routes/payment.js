@@ -16,9 +16,26 @@ const checkStripeConfig = (req, res, next) => {
 };
 
 // Create checkout session
-router.post('/create-checkout-session', checkStripeConfig, async (req, res) => {
+// Add logging middleware first to debug 405 errors
+router.post('/create-checkout-session', (req, res, next) => {
+  logger.info({ 
+    method: req.method, 
+    path: req.path, 
+    originalUrl: req.originalUrl,
+    hasStripe: !!stripe,
+    stripeKeySet: !!process.env.STRIPE_SECRET_KEY
+  }, 'POST /create-checkout-session - middleware called');
+  next();
+}, checkStripeConfig, async (req, res) => {
   try {
-    logger.info('Creating checkout session');
+    logger.info({ 
+      method: req.method, 
+      path: req.path, 
+      url: req.url,
+      originalUrl: req.originalUrl,
+      route: req.route?.path,
+      baseUrl: req.baseUrl
+    }, 'Creating checkout session - route handler called');
     logger.debug({ body: req.body }, 'Checkout session request body');
     const { items, customerEmail, customerName, locale = 'en' } = req.body;
     logger.debug({ itemsCount: items?.length, locale, hasEmail: !!customerEmail }, 'Parsed checkout data');
@@ -171,6 +188,9 @@ router.post('/create-checkout-session', checkStripeConfig, async (req, res) => {
         shipping_address_collection: {
           allowed_countries: ['US', 'CA', 'GB', 'AU', 'IN'], // Add more countries as needed
         },
+        automatic_tax: {
+          enabled: true,
+        },
         allow_promotion_codes: true,
         // Ensure redirect happens after payment
         payment_intent_data: {
@@ -303,6 +323,16 @@ router.get('/orders/email/:email', async (req, res) => {
       message: error.message 
     });
   }
+});
+
+// Test endpoint to verify router is working
+router.get('/test', (req, res) => {
+  res.json({ success: true, message: 'Payment router is working' });
+});
+
+// Test POST endpoint to verify POST method works
+router.post('/test', (req, res) => {
+  res.json({ success: true, message: 'Payment router POST is working', body: req.body });
 });
 
 // Note: Webhook endpoint is handled in server.js before body parsing middleware

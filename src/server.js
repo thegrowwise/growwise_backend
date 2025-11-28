@@ -22,31 +22,59 @@ const orderService = require('./services/orderService');
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+// Detect if we're in a serverless environment (Vercel, AWS Lambda, etc.)
+const isServerless = process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.FUNCTION_TARGET;
+
+// Trust proxy - REQUIRED for Vercel and other reverse proxies
+// This allows Express to correctly identify client IPs and handle X-Forwarded-* headers
+// Without this, rate limiting and other IP-based features won't work correctly
+app.set('trust proxy', true);
+
 // Security middleware
 app.use(helmet());
 
 // CORS configuration
-app.use(cors({
+const corsOptions = {
   origin: [
     'http://localhost:3000',
     'http://localhost:3001', 
+    'http://localhost:3003',
     'http://127.0.0.1:3000',
     'http://127.0.0.1:3001',
-    process.env.CORS_ORIGIN
+    'https://growwiseschool.org',
+    'https://www.growwiseschool.org',
+    process.env.CORS_ORIGIN,
+    process.env.FRONTEND_URL
   ].filter(Boolean),
-  credentials: true
-}));
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'stripe-signature']
+};
+
+app.use(cors(corsOptions));
+
+// Handle preflight requests explicitly
+app.options('*', cors(corsOptions));
 
 // Rate limiting
+// In serverless/proxy environments (like Vercel), we need to trust the proxy
+// Configure the rate limiter to work correctly with trusted proxies
 const limiter = rateLimit({
   windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000, // 15 minutes
   max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 100, // limit each IP to 100 requests per windowMs
   message: { error: 'Too many requests from this IP, please try again later.' },
   standardHeaders: true,
   legacyHeaders: false,
+  // Skip rate limiting for health checks
+  skip: (req) => {
+    return req.path === '/health' || req.path === '/';
+  },
+  // Disable validation warnings for proxy environments
+  // In Vercel, the proxy is trusted and we've already set trust proxy
+  validate: false, // Disable all validation checks (including trust proxy warning)
 });
 
-// Webhook route must be registered BEFORE body parsing middleware and rate limiting
+// Webhook route must be registered FIRST (before body parsing middleware)
 // Stripe webhooks require raw body for signature verification
 app.post('/api/payment/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
   if (!stripe || !process.env.STRIPE_WEBHOOK_SECRET) {
@@ -227,7 +255,10 @@ app.post('/api/payment/webhook', express.raw({ type: 'application/json' }), asyn
   res.json({ received: true });
 });
 
-// Apply rate limiting to all other routes
+// Routes are registered through routers below - no direct route registration needed
+
+// Apply rate limiting to all other routes (except webhook which is already registered)
+// Note: Webhook route is registered before this, so it's not rate limited
 app.use(limiter);
 
 // Body parsing middleware
@@ -239,6 +270,47 @@ app.use(compression());
 
 // Logging middleware
 app.use(morgan('combined'));
+
+// Initialize database on first request (for serverless) - must be before routes
+if (isServerless) {
+  let dbInitialized = false;
+  async function ensureDatabaseInitialized() {
+    if (!dbInitialized) {
+      try {
+        await initializeDatabase();
+        logger.info('Database connection initialized');
+        dbInitialized = true;
+      } catch (error) {
+        logger.error({ error: error.message }, 'Failed to initialize database connection');
+        // Continue anyway - some adapters might not need explicit connection
+        dbInitialized = true; // Mark as attempted to prevent infinite retries
+      }
+    }
+  }
+  
+  app.use(async (req, res, next) => {
+    await ensureDatabaseInitialized();
+    next();
+  });
+}
+
+// Root endpoint - API information
+app.get('/', (req, res) => {
+  res.status(200).json({
+    success: true,
+    message: 'GrowWise Backend API',
+    version: '1.0.0',
+    endpoints: {
+      health: '/health',
+      testimonials: '/api/testimonials',
+      contact: '/api/contact',
+      search: '/api/search',
+      enrollment: '/api/enrollment',
+      payment: '/api/payment'
+    },
+    timestamp: new Date().toISOString()
+  });
+});
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -254,7 +326,27 @@ app.use('/api/testimonials', testimonialsRoutes);
 app.use('/api/contact', contactRoutes);
 app.use('/api/search', searchRoutes);
 app.use('/api/enrollment', enrollmentRoutes);
+
+// Payment routes - mount after webhook route to avoid conflicts
+// The webhook route is already registered directly on app at /api/payment/webhook
+// Mount payment router - this will handle /api/payment/* routes except /webhook
+// IMPORTANT: Make sure this is after body parsing middleware so req.body is available
 app.use('/api/payment', paymentRoutes);
+
+// Debug: Log route registration in development
+if (process.env.NODE_ENV !== 'production' && !isServerless) {
+  setTimeout(() => {
+    logger.info('Registered routes:');
+    app._router.stack.forEach((middleware, i) => {
+      if (middleware.route) {
+        const methods = Object.keys(middleware.route.methods).join(', ').toUpperCase();
+        logger.info(`  ${methods} ${middleware.route.path}`);
+      } else if (middleware.name === 'router') {
+        logger.info(`  Router mounted at: ${middleware.regexp}`);
+      }
+    });
+  }, 100);
+}
 
 // Error handling middleware
 app.use(notFound);
@@ -277,53 +369,58 @@ process.on('uncaughtException', (error) => {
   // Don't exit for other errors, just log
 });
 
-// Start server
-async function startServer() {
-  // Initialize database connection
-  try {
-    await initializeDatabase();
-    logger.info('Database connection initialized');
-  } catch (error) {
-    logger.error({ error: error.message }, 'Failed to initialize database connection');
-    // Continue anyway - some adapters might not need explicit connection
+// Start server (only if not in serverless environment)
+if (!isServerless) {
+  async function startServer() {
+    // Initialize database connection
+    try {
+      await initializeDatabase();
+      logger.info('Database connection initialized');
+    } catch (error) {
+      logger.error({ error: error.message }, 'Failed to initialize database connection');
+      // Continue anyway - some adapters might not need explicit connection
+    }
+
+    const server = app.listen(PORT, () => {
+          logger.info(`GrowWise Backend Server running on port ${PORT}`);
+          logger.info(`Health check: http://localhost:${PORT}/health`);
+          logger.info(`Testimonials API: http://localhost:${PORT}/api/testimonials`);
+          logger.info(`Contact API: http://localhost:${PORT}/api/contact`);
+          logger.info(`Search API: http://localhost:${PORT}/api/search`);
+          logger.info(`Enrollment API: http://localhost:${PORT}/api/enrollment`);
+          logger.info(`Payment API: http://localhost:${PORT}/api/payment`);
+    });
+
+    server.on('error', (error) => {
+      if (error.code === 'EADDRINUSE') {
+        logger.error(`Port ${PORT} is already in use.`);
+        logger.error('Please kill the existing process:');
+        logger.error(`lsof -ti:${PORT} | xargs kill -9`);
+        process.exit(1);
+      } else {
+        logger.error({ error: error.message }, 'Server error');
+        throw error;
+      }
+    });
   }
 
-  const server = app.listen(PORT, () => {
-        logger.info(`GrowWise Backend Server running on port ${PORT}`);
-        logger.info(`Health check: http://localhost:${PORT}/health`);
-        logger.info(`Testimonials API: http://localhost:${PORT}/api/testimonials`);
-        logger.info(`Contact API: http://localhost:${PORT}/api/contact`);
-        logger.info(`Search API: http://localhost:${PORT}/api/search`);
-        logger.info(`Enrollment API: http://localhost:${PORT}/api/enrollment`);
-        logger.info(`Payment API: http://localhost:${PORT}/api/payment`);
+  // Graceful shutdown
+  const { closeDatabase } = require('./database/database');
+
+  process.on('SIGTERM', async () => {
+    logger.info('SIGTERM received, shutting down gracefully');
+    await closeDatabase();
+    process.exit(0);
   });
 
-  server.on('error', (error) => {
-    if (error.code === 'EADDRINUSE') {
-      logger.error(`Port ${PORT} is already in use.`);
-      logger.error('Please kill the existing process:');
-      logger.error(`lsof -ti:${PORT} | xargs kill -9`);
-      process.exit(1);
-    } else {
-      logger.error({ error: error.message }, 'Server error');
-      throw error;
-    }
+  process.on('SIGINT', async () => {
+    logger.info('SIGINT received, shutting down gracefully');
+    await closeDatabase();
+    process.exit(0);
   });
+
+  startServer();
 }
 
-// Graceful shutdown
-const { closeDatabase } = require('./database/database');
-
-process.on('SIGTERM', async () => {
-  logger.info('SIGTERM received, shutting down gracefully');
-  await closeDatabase();
-  process.exit(0);
-});
-
-process.on('SIGINT', async () => {
-  logger.info('SIGINT received, shutting down gracefully');
-  await closeDatabase();
-  process.exit(0);
-});
-
-startServer();
+// Export app for Vercel serverless functions
+module.exports = app;
