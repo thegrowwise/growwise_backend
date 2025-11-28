@@ -63,14 +63,15 @@ const errorHandler = (err, req, res, next) => {
   };
 
   // Log error for debugging
-  console.error('❌ Error:', {
+  const logger = require('../utils/logger');
+  logger.error({
     message: err.message,
     stack: err.stack,
     url: req.originalUrl,
     method: req.method,
     ip: req.ip,
     userAgent: req.get('User-Agent')
-  });
+  }, 'Request error');
 
   res.status(statusCode).json(errorResponse);
 };
