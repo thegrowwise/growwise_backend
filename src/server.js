@@ -57,12 +57,21 @@ app.use(cors(corsOptions));
 app.options('*', cors(corsOptions));
 
 // Rate limiting
+// In serverless/proxy environments (like Vercel), we need to trust the proxy
+// Configure the rate limiter to work correctly with trusted proxies
 const limiter = rateLimit({
   windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000, // 15 minutes
   max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 100, // limit each IP to 100 requests per windowMs
   message: { error: 'Too many requests from this IP, please try again later.' },
   standardHeaders: true,
   legacyHeaders: false,
+  // Skip rate limiting for health checks
+  skip: (req) => {
+    return req.path === '/health' || req.path === '/';
+  },
+  // Disable validation warnings for proxy environments
+  // In Vercel, the proxy is trusted and we've already set trust proxy
+  validate: false, // Disable all validation checks (including trust proxy warning)
 });
 
 // Webhook route must be registered BEFORE body parsing middleware and rate limiting
