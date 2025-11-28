@@ -18,7 +18,7 @@ const checkStripeConfig = (req, res, next) => {
 // Create checkout session
 router.post('/create-checkout-session', checkStripeConfig, async (req, res) => {
   try {
-    logger.info('Creating checkout session');
+    logger.info({ method: req.method, path: req.path, url: req.url }, 'Creating checkout session');
     logger.debug({ body: req.body }, 'Checkout session request body');
     const { items, customerEmail, customerName, locale = 'en' } = req.body;
     logger.debug({ itemsCount: items?.length, locale, hasEmail: !!customerEmail }, 'Parsed checkout data');
@@ -306,6 +306,11 @@ router.get('/orders/email/:email', async (req, res) => {
       message: error.message 
     });
   }
+});
+
+// Test endpoint to verify router is working
+router.get('/test', (req, res) => {
+  res.json({ success: true, message: 'Payment router is working' });
 });
 
 // Note: Webhook endpoint is handled in server.js before body parsing middleware

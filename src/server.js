@@ -29,16 +29,27 @@ const isServerless = process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME 
 app.use(helmet());
 
 // CORS configuration
-app.use(cors({
+const corsOptions = {
   origin: [
     'http://localhost:3000',
     'http://localhost:3001', 
+    'http://localhost:3003',
     'http://127.0.0.1:3000',
     'http://127.0.0.1:3001',
-    process.env.CORS_ORIGIN
+    'https://growwiseschool.org',
+    'https://www.growwiseschool.org',
+    process.env.CORS_ORIGIN,
+    process.env.FRONTEND_URL
   ].filter(Boolean),
-  credentials: true
-}));
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'stripe-signature']
+};
+
+app.use(cors(corsOptions));
+
+// Handle preflight requests explicitly
+app.options('*', cors(corsOptions));
 
 // Rate limiting
 const limiter = rateLimit({
@@ -230,7 +241,8 @@ app.post('/api/payment/webhook', express.raw({ type: 'application/json' }), asyn
   res.json({ received: true });
 });
 
-// Apply rate limiting to all other routes
+// Apply rate limiting to all other routes (except webhook which is already registered)
+// Note: Webhook route is registered before this, so it's not rate limited
 app.use(limiter);
 
 // Body parsing middleware
@@ -298,6 +310,10 @@ app.use('/api/testimonials', testimonialsRoutes);
 app.use('/api/contact', contactRoutes);
 app.use('/api/search', searchRoutes);
 app.use('/api/enrollment', enrollmentRoutes);
+
+// Payment routes - mount after webhook route to avoid conflicts
+// The webhook route is already registered directly on app at /api/payment/webhook
+// Mount payment router - this will handle /api/payment/* routes except /webhook
 app.use('/api/payment', paymentRoutes);
 
 // Error handling middleware
